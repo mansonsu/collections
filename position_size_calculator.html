@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <title>合約倉位大小計算器</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f172a;
+      color: #e5e7eb;
+      margin: 0;
+      padding: 16px;
+    }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      background: #020617;
+      border-radius: 12px;
+      padding: 20px 24px 28px;
+      border: 1px solid #1e293b;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+    }
+    h1 { font-size: 22px; margin-top: 0; margin-bottom: 6px; }
+    .sub { font-size: 13px; color: #9ca3af; margin-bottom: 16px; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px 20px;
+    }
+
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    label { font-size: 13px; color: #e5e7eb; font-weight: 600; }
+
+    /* ＝新增：止盈綠 / 止損紅＝ */
+    .label-tp {
+      color: #4ade80 !important; /* 綠 */
+      font-weight: 700;
+    }
+    .label-sl {
+      color: #f87171 !important; /* 紅 */
+      font-weight: 700;
+    }
+
+    input {
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid #334155;
+      background: #020617;
+      color: #e5e7eb;
+      font-size: 14px;
+    }
+    input::placeholder {
+      color: #6b7280;
+      font-size: 13px;
+    }
+    input:focus {
+      border-color: #38bdf8;
+      box-shadow: 0 0 0 1px #38bdf8;
+      outline: none;
+    }
+
+    .btn-row { display: flex; gap: 10px; margin: 14px 0; flex-wrap: wrap; }
+    button {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 999px;
+      cursor: pointer;
+      font-weight: 600;
+      background: #38bdf8;
+      color: #020617;
+    }
+    button.secondary {
+      background: #111827;
+      color: #e5e7eb;
+      border: 1px solid #374151;
+    }
+
+    .error { font-size: 12px; color: #fecaca; margin-bottom: 6px; min-height: 16px; }
+
+    .results-card {
+      margin-top: 12px;
+      border-radius: 10px;
+      border: 1px solid #1e293b;
+      background: #020617;
+      padding: 14px;
+    }
+    .results-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px 16px;
+    }
+    .result-item-title { font-size: 12px; color: #9ca3af; }
+    .result-item-value { font-size: 15px; margin-top: 2px; }
+
+    .divider { margin: 12px 0; border-top: 1px dashed #1f2933; }
+
+    .footer-note { font-size: 11px; color: #6b7280; margin-top: 10px; }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <h1>合約倉位大小計算器</h1>
+    <div class="sub">
+      自動計算倉位價值、保證金、止盈%、止盈金額、盈虧比 R，並自動判斷多空方向。
+    </div>
+
+    <!-- 輸入欄位 -->
+    <div class="grid">
+
+      <div class="field">
+        <label for="entryPrice">入場價 (USD)</label>
+        <input id="entryPrice" type="number" step="0.0001" placeholder="例如：10000" />
+      </div>
+
+      <div class="field">
+        <label for="stopPrice" class="label-sl">止損價 (USD)</label>
+        <input id="stopPrice" type="number" step="0.0001" placeholder="例如：9750" />
+      </div>
+
+      <div class="field">
+        <label for="takeProfitPrice" class="label-tp">止盈價 (USD)</label>
+        <input id="takeProfitPrice" type="number" step="0.0001" placeholder="例如：11200" />
+      </div>
+
+      <div class="field">
+        <label for="maxLoss">最大虧損金額 (USD)</label>
+        <input id="maxLoss" type="number" step="0.01" placeholder="例如：150" />
+      </div>
+
+      <div class="field">
+        <label for="leverage">槓桿倍數</label>
+        <input id="leverage" type="number" step="0.1" placeholder="例如：10" />
+      </div>
+
+    </div>
+
+    <div class="btn-row">
+      <button onclick="calculate()">計算</button>
+      <button class="secondary" onclick="fillExample()">填入範例</button>
+    </div>
+
+    <div id="error" class="error"></div>
+
+    <!-- 結果卡片 -->
+    <div class="results-card">
+
+      <div class="results-grid">
+        <div>
+          <div class="result-item-title">自動判斷方向</div>
+          <div id="autoDirection" class="result-item-value">—</div>
+        </div>
+
+        <div>
+          <div class="result-item-title">止損距離 (%)</div>
+          <div id="stopDistancePct" class="result-item-value">—</div>
+        </div>
+
+        <div>
+          <div class="result-item-title">倉位價值 (USD)</div>
+          <div id="positionValue" class="result-item-value">—</div>
+        </div>
+
+        <div>
+          <div class="result-item-title">所需保證金 (USD)</div>
+          <div id="requiredMargin" class="result-item-value">—</div>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="results-grid">
+        <div>
+          <div class="result-item-title">止盈利潤 (%)</div>
+          <div id="takeProfitPct" class="result-item-value">—</div>
+        </div>
+
+        <div>
+          <div class="result-item-title">止盈金額 (USD)</div>
+          <div id="takeProfitUsd" class="result-item-value">—</div>
+        </div>
+
+        <div>
+          <div class="result-item-title">盈虧比 (R)</div>
+          <div id="rrr" class="result-item-value">—</div>
+        </div>
+      </div>
+
+      <div class="footer-note">
+        盈虧比 R = |止盈 - 入場| ÷ |入場 - 止損|
+      </div>
+
+    </div>
+  </div>
+
+<script>
+function formatNumber(n, d) {
+  return isFinite(n) ? Number(n).toFixed(d) : "—";
+}
+
+function calculate() {
+  const entry = parseFloat(entryPrice.value);
+  const stop = parseFloat(stopPrice.value);
+  const tp = parseFloat(takeProfitPrice.value);
+  const maxLossV = parseFloat(maxLoss.value);
+  const lev = parseFloat(leverage.value);
+
+  const err = document.getElementById("error");
+  err.textContent = "";
+
+  if ([entry, stop, maxLossV, lev].some(v => isNaN(v))) {
+    err.textContent = "請先填寫必要欄位。";
+    return;
+  }
+
+  // === 自動判斷方向（含 emoji） ===
+  let directionLabel = "—";
+  let dirType = "UNKNOWN";
+
+  if (stop < entry && tp > entry) {
+    directionLabel = "🟩 LONG（做多）";
+    dirType = "LONG";
+  } else if (stop > entry && tp < entry) {
+    directionLabel = "🟥 SHORT（做空）";
+    dirType = "SHORT";
+  } else {
+    directionLabel = "⚠️ 無法判斷（止盈止損邏輯異常）";
+    dirType = "UNKNOWN";
+  }
+
+  autoDirection.textContent = directionLabel;
+
+  const riskDist = Math.abs(entry - stop);
+  const stopFrac = riskDist / entry;
+
+  if (stopFrac === 0) {
+    err.textContent = "止損不可等於入場。";
+    return;
+  }
+
+  const stopPct = stopFrac * 100;
+  const posValue = maxLossV / stopFrac;
+  const margin = posValue / lev;
+
+  // === 止盈 (%) + 止盈金額 ===
+  let tpPct = "—";
+  let tpUsd = "—";
+
+  if (!isNaN(tp) && dirType !== "UNKNOWN") {
+    let pf = NaN;
+
+    if (dirType === "LONG") pf = (tp - entry) / entry;
+    else if (dirType === "SHORT") pf = (entry - tp) / entry;
+
+    if (!isNaN(pf)) {
+      tpPct = formatNumber(pf * 100, 2) + " %";
+      tpUsd = formatNumber(posValue * pf, 2);
+    }
+  }
+
+  // === R 值 ===
+  let rr = "—";
+  if (!isNaN(tp) && riskDist > 0) {
+    const rewardDist = Math.abs(tp - entry);
+    rr = formatNumber(rewardDist / riskDist, 2) + " R";
+  }
+
+  stopDistancePct.textContent = formatNumber(stopPct, 2) + " %";
+  positionValue.textContent = formatNumber(posValue, 2);
+  requiredMargin.textContent = formatNumber(margin, 2);
+  takeProfitPct.textContent = tpPct;
+  takeProfitUsd.textContent = tpUsd;
+  rrr.textContent = rr;
+}
+
+function fillExample() {
+  entryPrice.value = 10000;
+  stopPrice.value = 9500;
+  takeProfitPrice.value = 11300;
+  maxLoss.value = 150;
+  leverage.value = 20;
+  calculate();
+}
+</script>
+
+</body>
+</html>
