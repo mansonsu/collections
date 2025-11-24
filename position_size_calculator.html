@@ -33,13 +33,13 @@
     .field { display: flex; flex-direction: column; gap: 6px; }
     label { font-size: 13px; color: #e5e7eb; font-weight: 600; }
 
-    /* ＝新增：止盈綠 / 止損紅＝ */
+    /* 止盈綠 / 止損紅 */
     .label-tp {
-      color: #4ade80 !important; /* 綠 */
+      color: #4ade80 !important;
       font-weight: 700;
     }
     .label-sl {
-      color: #f87171 !important; /* 紅 */
+      color: #f87171 !important;
       font-weight: 700;
     }
 
@@ -104,7 +104,8 @@
   <div class="container">
     <h1>合約倉位大小計算器</h1>
     <div class="sub">
-      自動計算倉位價值、保證金、止盈%、止盈金額、盈虧比 R，並自動判斷多空方向。
+      自動計算倉位價值、保證金、止盈%、止盈金額、盈虧比 R，並自動判斷多空方向。<br>
+      ※ 若「未填止損」但有填止盈，會假設盈虧比 1:1 來推算止損價。
     </div>
 
     <!-- 輸入欄位 -->
@@ -117,7 +118,7 @@
 
       <div class="field">
         <label for="stopPrice" class="label-sl">止損價 (USD)</label>
-        <input id="stopPrice" type="number" step="0.0001" placeholder="例如：9750" />
+        <input id="stopPrice" type="number" step="0.0001" placeholder="可留空讓系統用 1:1 盈虧比反推" />
       </div>
 
       <div class="field">
@@ -189,7 +190,8 @@
       </div>
 
       <div class="footer-note">
-        盈虧比 R = |止盈 - 入場| ÷ |入場 - 止損|
+        盈虧比 R = |止盈 - 入場| ÷ |入場 - 止損|。<br>
+        若止損留空且有止盈，系統會用「價格距離 1:1」來推算止損。
       </div>
 
     </div>
@@ -202,7 +204,7 @@ function formatNumber(n, d) {
 
 function calculate() {
   const entry = parseFloat(entryPrice.value);
-  const stop = parseFloat(stopPrice.value);
+  let stop = parseFloat(stopPrice.value);
   const tp = parseFloat(takeProfitPrice.value);
   const maxLossV = parseFloat(maxLoss.value);
   const lev = parseFloat(leverage.value);
@@ -210,24 +212,70 @@ function calculate() {
   const err = document.getElementById("error");
   err.textContent = "";
 
-  if ([entry, stop, maxLossV, lev].some(v => isNaN(v))) {
-    err.textContent = "請先填寫必要欄位。";
+  // 必要欄位：入場價、最大虧損、槓桿
+  if ([entry, maxLossV, lev].some(v => isNaN(v))) {
+    err.textContent = "請先填寫「入場價、最大虧損金額、槓桿」這三個欄位。";
     return;
+  }
+
+  // === 若沒填止損，且有填止盈 → 用盈虧比 1:1 推算止損 ===
+  if (isNaN(stop)) {
+    if (isNaN(tp)) {
+      err.textContent = "未輸入止損價，且未輸入止盈價，無法用盈虧比 1:1 推算止損。";
+      return;
+    }
+
+    if (tp === entry) {
+      err.textContent = "止盈價不得等於入場價，無法推算方向與止損。";
+      return;
+    }
+
+    const dirGuess = tp > entry ? "LONG" : "SHORT";
+    const dist = Math.abs(tp - entry); // 價格距離（1:1）
+
+    if (dirGuess === "LONG") {
+      // 多單：止盈在上方 → 止損對稱在下方
+      const candidate = entry - dist;
+      if (candidate <= 0) {
+        err.textContent = "以盈虧比 1:1 計算，多單止損會低於等於 0，請調整止盈或手動輸入止損。";
+        return;
+      }
+      stop = candidate;
+    } else {
+      // 空單：止盈在下方 → 止損對稱在上方
+      stop = entry + dist;
+    }
+
+    stopPrice.value = stop.toFixed(4); // 寫回欄位
   }
 
   // === 自動判斷方向（含 emoji） ===
   let directionLabel = "—";
   let dirType = "UNKNOWN";
 
-  if (stop < entry && tp > entry) {
-    directionLabel = "🟩 LONG（做多）";
-    dirType = "LONG";
-  } else if (stop > entry && tp < entry) {
-    directionLabel = "🟥 SHORT（做空）";
-    dirType = "SHORT";
-  } else {
-    directionLabel = "⚠️ 無法判斷（止盈止損邏輯異常）";
-    dirType = "UNKNOWN";
+  if (!isNaN(stop) && !isNaN(tp)) {
+    if (stop < entry && tp > entry) {
+      directionLabel = "🟩 LONG（做多）";
+      dirType = "LONG";
+    } else if (stop > entry && tp < entry) {
+      directionLabel = "🟥 SHORT（做空）";
+      dirType = "SHORT";
+    } else {
+      directionLabel = "⚠️ 無法判斷（止盈止損邏輯異常）";
+      dirType = "UNKNOWN";
+    }
+  } else if (!isNaN(stop)) {
+    // 只有止損，沒有止盈時，單純用止損位置推測方向
+    if (stop < entry) {
+      directionLabel = "🟩 LONG（做多，依止損推測）";
+      dirType = "LONG";
+    } else if (stop > entry) {
+      directionLabel = "🟥 SHORT（做空，依止損推測）";
+      dirType = "SHORT";
+    } else {
+      directionLabel = "⚠️ 無法判斷（止損等於入場）";
+      dirType = "UNKNOWN";
+    }
   }
 
   autoDirection.textContent = directionLabel;
@@ -241,7 +289,7 @@ function calculate() {
   }
 
   const stopPct = stopFrac * 100;
-  const posValue = maxLossV / stopFrac;
+  const posValue = maxLossV / stopFrac; // 倉位價值
   const margin = posValue / lev;
 
   // === 止盈 (%) + 止盈金額 ===
@@ -276,8 +324,9 @@ function calculate() {
 }
 
 function fillExample() {
+  // 範例：多單，1:1 會自動算出止損
   entryPrice.value = 10000;
-  stopPrice.value = 9500;
+  stopPrice.value = "";
   takeProfitPrice.value = 11300;
   maxLoss.value = 150;
   leverage.value = 20;
